@@ -9,7 +9,7 @@ New-Variable -Name ALLPIRGSOU -Value "ou=PIRGS,ou=RACS,ou=Groups,ou=IS,ou=units,
 #>
 function Get-NextPirgGid {
     # Returns the next available gidNumber in the RACS gid range (300,000 - 400,000)
-    return (Get-ADGroup -Properties gidNumber -SearchBase $ALLPIRGSOU -Filter * | Select-Object gidNumber | Sort-Object | Select-Object -Last 1).gidNumber + 1
+    return (Get-ADGroup -Properties gidNumber -SearchBase $ALLPIRGSOU -Filter * | Select-Object gidNumber | Sort-Object -Property gidNumber | Select-Object -Last 1).gidNumber + 1
 }
 
 <#
