@@ -31,8 +31,11 @@ function Get-Pirg {
         [Parameter(Mandatory=$true)]
         [String] $Name
     )
-    $GroupName = "is.racs.pirg.$Name"
-    Get-ADGroup -Properties * -Filter "name -like '$GroupName'" -SearchBase $ALLPIRGSOU
+
+    $PirgName = $Pirg.ToLower()
+
+    $PirgFullName = "is.racs.pirg.$PirgName"
+    Get-ADGroup -Properties * -Filter "name -like '$PirgFullName'" -SearchBase $ALLPIRGSOU
 }
 
 
@@ -44,7 +47,7 @@ function Get-Pirg {
   Create a new AD group in the PIRGs OU. The resulting group name will be "is.racs.pirg.NAME"
 
  .Parameter Name
-  The name of the PIRG using only [a-zA-Z].
+  The name of the PIRG using only alphanumeric characters. This will be converted to lowercase during creation.
 
  .Example
    # Create the "test" PIRG
@@ -53,17 +56,21 @@ function Get-Pirg {
 function New-Pirg {
     param(
         [Parameter(Mandatory=$true)]
-        [ValidatePattern('[a-zA-Z]')]
+        [ValidatePattern("^[a-z0-9]+$")]
         [String] $Name
     )
-    $ExistingGroup = Get-Pirg -Name $Name
+
+    $PirgName = $Pirg.ToLower()
+
+    $ExistingGroup = Get-Pirg -Name $PirgName
     if ($ExistingGroup) {
         Write-Output "PIRG already exists, exiting."
         return
     }
 
-    New-ADOrganizationalUnit -Name $Name -Path $ALLPIRGSOU
-    New-ADGroup -Name "is.racs.pirg.$Name" -Path "ou=$Name,$ALLPIRGSOU" -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid)} -GroupCategory Security -GroupScope Universal
+
+    New-ADOrganizationalUnit -Name $PirgName -Path $ALLPIRGSOU
+    New-ADGroup -Name "is.racs.pirg.$PirgName" -Path "ou=$PirgName,$ALLPIRGSOU" -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid)} -GroupCategory Security -GroupScope Universal
 }
 
 <#
@@ -87,12 +94,16 @@ function Get-PirgGroup {
     param(
         [Parameter(Mandatory=$true)]
         [String] $Pirg,
+
         [Parameter(Mandatory=$true)]
         [String] $Name
     )
 
-    $PirgGroupName = "is.racs.pirg.$Pirg.$Name"
-    Get-ADGroup -Properties * -Filter "name -like '$PirgGroupName'" -SearchBase $ALLPIRGSOU
+    $PirgName = $Pirg.ToLower()
+    $PirgGroupName = $Name.ToLower()
+
+    $PirgGroupFullName = "is.racs.pirg.$PirgName.$PirgGroupName"
+    Get-ADGroup -Properties * -Filter "name -like '$PirgGroupFullName'" -SearchBase $ALLPIRGSOU
 }
 
 <#
@@ -106,7 +117,7 @@ function Get-PirgGroup {
   The name of the PIRG to add the group to.
 
  .Parameter Name
-  The name of the Group using only [a-zA-Z].
+  The name of the Group, limited to alphanumeric characters. This name will be converted to all lowercase for creation.
 
  .Example
    # Create the "students" Group in the "hpcrcf" PIRG.
@@ -116,22 +127,27 @@ function New-PirgGroup {
     param(
         [Parameter(Mandatory=$true)]
         [String] $Pirg,
+
         [Parameter(Mandatory=$true)]
-        [ValidatePattern('[a-zA-Z]')]
+        [ValidatePattern("^[a-z0-9]+$")]
         [String] $Name
     )
 
-    $ExistingGroup = Get-PirgGroup -Pirg $Pirg -Name $Name
+    $PirgName = $Pirg.ToLower()
+    $PirgGroupName = $Name.ToLower()
+
+    $ExistingGroup = Get-PirgGroup -Pirg $PirgName -Name $PirgGroupName
     if ($ExistingGroup) {
         Write-Output "PIRG Group already exists, exiting."
         return
     }
 
-    $PirgExists = Get-Pirg -Name $Pirg
+    $PirgExists = Get-Pirg -Name $PirgName
     if (!($PirgExists)) {
         Write-Output "PIRG does not exist, exiting."
+        return
     }
 
-    New-ADGroup -Name "is.racs.pirg.$Pirg.$name" -Path "ou=$Pirg,$ALLPIRGSOU" -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid)} -GroupCategory Security -GroupScope Universal
+    New-ADGroup -Name "is.racs.pirg.$PirgName.$PirgGroupName" -Path "ou=$PirgName,$ALLPIRGSOU" -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid)} -GroupCategory Security -GroupScope Universal
 }
 
