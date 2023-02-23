@@ -1,4 +1,4 @@
-New-Variable -Name ALLPIRGSOU -Value "ou=PIRGS,ou=RACS,ou=Groups,ou=IS,ou=units,dc=ad,dc=uoregon,dc=edu" -Scope Script -Force
+New-Variable -Name PIRGSOU -Value "ou=PIRGS,ou=RACS,ou=Groups,ou=IS,ou=units,dc=ad,dc=uoregon,dc=edu" -Scope Script -Force
 
 <#
  .Synopsis
@@ -8,9 +8,12 @@ New-Variable -Name ALLPIRGSOU -Value "ou=PIRGS,ou=RACS,ou=Groups,ou=IS,ou=units,
   Returns the next available gidNumber in the RACS gid range (300,000 - 400,000).
 #>
 function Get-NextPirgGid {
-    # Returns the next available gidNumber in the RACS gid range (300,000 - 400,000)
-    return (Get-ADGroup -Properties gidNumber -SearchBase $ALLPIRGSOU -Filter * | Select-Object gidNumber | Sort-Object -Property gidNumber | Select-Object -Last 1).gidNumber + 1
+    return (Get-ADGroup -Properties gidNumber -SearchBase $PIRGSOU -Filter * | Select-Object gidNumber | Sort-Object -Property gidNumber | Select-Object -Last 1).gidNumber + 1
 }
+
+###############################
+###  Pirg Management        ###
+###############################
 
 <#
  .Synopsis
@@ -32,10 +35,10 @@ function Get-Pirg {
         [String] $Name
     )
 
-    $PirgName = $Pirg.ToLower()
+    $PirgName = $Name.ToLower()
 
     $PirgFullName = "is.racs.pirg.$PirgName"
-    Get-ADGroup -Properties * -Filter "name -like '$PirgFullName'" -SearchBase $ALLPIRGSOU
+    Get-ADGroup -Properties * -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU
 }
 
 
@@ -56,11 +59,15 @@ function Get-Pirg {
 function New-Pirg {
     param(
         [Parameter(Mandatory=$true)]
-        [ValidatePattern("^[a-z0-9]+$")]
         [String] $Name
     )
 
-    $PirgName = $Pirg.ToLower()
+    if (!($Name -cmatch "^[a-z][a-z0-9_][a-z0-9]+$")) {
+        Write-Error "Name must be lowercase alphanumeric, start with a letter, and may contain underscores"
+        return
+    }
+
+    $PirgName = $Name.ToLower()
 
     $ExistingGroup = Get-Pirg -Name $PirgName
     if ($ExistingGroup) {
@@ -68,10 +75,110 @@ function New-Pirg {
         return
     }
 
-
-    New-ADOrganizationalUnit -Name $PirgName -Path $ALLPIRGSOU
-    New-ADGroup -Name "is.racs.pirg.$PirgName" -Path "ou=$PirgName,$ALLPIRGSOU" -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid)} -GroupCategory Security -GroupScope Universal
+    New-ADGroup -Name "is.racs.pirg.$PirgName" -Path $PIRGSOU -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid)} -GroupCategory Security -GroupScope Universal
 }
+
+<#
+ .Synopsis
+  Get users in a PIRG.
+
+ .Description
+  Return a list of all AD users in a PIRG.
+
+ .Parameter Name
+  The name of the PIRG.
+
+ .Example
+   # Get all users in the "hpcrcf" PIRG
+   Get-PirgUsers -Name hpcrcf 
+#>
+function Get-PirgUsers {
+    param(
+        [Parameter(Mandatory=$true)]
+        [String] $Name
+    )
+
+    $PirgName = $Name.ToLower()
+
+    $GroupObject = Get-Pirg -Name $PirgName
+    if (!($GroupObject)) {
+        Write-Output "PIRG not found, exiting."
+        return
+    }
+
+    Get-ADGroupMember $GroupObject
+}
+
+<#
+ .Synopsis
+  Get list of usernames in a PIRG.
+
+ .Description
+  Return a list of username strings in a PIRG.
+
+ .Parameter Name
+  The name of the PIRG.
+
+ .Example
+   # Get a list of username strings in the "hpcrcf.students" PIRG Group
+   Get-PirgUsernames -Pirg hpcrcf -Name students
+#>
+function Get-PirgUsernames {
+    param(
+        [Parameter(Mandatory=$true)]
+        [String] $Name
+    )
+
+    Get-PirgUsers -Pirg $Pirg -Name $Name | Select-Object -Property samaccountname
+}
+
+<#
+ .Synopsis
+  Add user to PIRG.
+
+ .Description
+  Add the given AD user object to the PIRG.
+
+ .Parameter Pirg
+  The name of the PIRG.
+
+ .Parameter User
+  Username of the user to add.
+
+ .Example
+   # Add Mark to the hpcrcf PIRG.
+   Add-PirgUser -Pirg hpcrcf -User marka
+#>
+function Add-PirgUser {
+    param(
+        [Parameter(Mandatory=$true)]
+        [String] $Pirg,
+
+        [Parameter(Mandatory=$true)]
+        [String] $User
+    )
+
+    $PirgName = $Pirg.ToLower()
+    $UserName = $User.ToLower()
+
+    $UserObject = Get-ADUser $UserName
+    if (!($UserObject)) {
+        Write-Output "User not found, exiting."
+        return
+    }
+
+    $GroupObject = Get-Pirg -Name $PirgName
+    if (!($GroupObject)) {
+        Write-Output "PIRG not found, exiting."
+        return
+    }
+
+    Add-ADGroupMember -Identity $GroupObject -Members $UserObject
+}
+
+###############################
+###  Pirg Group Management  ###
+###############################
 
 <#
  .Synopsis
@@ -103,7 +210,7 @@ function Get-PirgGroup {
     $PirgGroupName = $Name.ToLower()
 
     $PirgGroupFullName = "is.racs.pirg.$PirgName.$PirgGroupName"
-    Get-ADGroup -Properties * -Filter "name -like '$PirgGroupFullName'" -SearchBase $ALLPIRGSOU
+    Get-ADGroup -Properties * -Filter "name -like '$PirgGroupFullName'" -SearchBase $PIRGSOU
 }
 
 <#
@@ -129,9 +236,13 @@ function New-PirgGroup {
         [String] $Pirg,
 
         [Parameter(Mandatory=$true)]
-        [ValidatePattern("^[a-z0-9]+$")]
         [String] $Name
     )
+
+    if (!($Name -cmatch "^[a-z][a-z0-9_][a-z0-9]+$")) {
+        Write-Error "Name must be lowercase alphanumeric, start with a letter, and may contain underscores"
+        return
+    }
 
     $PirgName = $Pirg.ToLower()
     $PirgGroupName = $Name.ToLower()
@@ -144,10 +255,128 @@ function New-PirgGroup {
 
     $PirgExists = Get-Pirg -Name $PirgName
     if (!($PirgExists)) {
-        Write-Output "PIRG does not exist, exiting."
+        Write-Output "PIRG not found, exiting."
         return
     }
 
-    New-ADGroup -Name "is.racs.pirg.$PirgName.$PirgGroupName" -Path "ou=$PirgName,$ALLPIRGSOU" -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid)} -GroupCategory Security -GroupScope Universal
+    New-ADGroup -Name "is.racs.pirg.$PirgName.$PirgGroupName" -Path $PIRGSOU -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid)} -GroupCategory Security -GroupScope Universal
 }
 
+
+<#
+ .Synopsis
+  Get users in a PIRG Group.
+
+ .Description
+  Return a list of all AD users in a PIRG Group.
+
+ .Parameter Pirg
+  The name of the PIRG.
+
+ .Parameter Name
+  The name of the PIRG Group.
+
+ .Example
+   # Get all users in the "hpcrcf.students" PIRG Group
+   Get-PirgUsers -Pirg hpcrcf -Name students
+#>
+function Get-PirgGroupUsers {
+    param(
+        [Parameter(Mandatory=$true)]
+        [String] $Pirg,
+        
+        [Parameter(Mandatory=$true)]
+        [String] $Name
+    )
+
+    $PirgName = $Pirg.ToLower()
+    $PirgGroupName = $Name.ToLower()
+
+    $GroupObject = Get-PirgGroup -Pirg $PirgName -Name $PirgGroupName
+    if (!($GroupObject)) {
+        Write-Output "PIRG Group not found, exiting."
+        return
+    }
+    Get-ADGroupMember $GroupObject
+}
+
+<#
+ .Synopsis
+  Get list of usernames in a PIRG Group.
+
+ .Description
+  Return a list of username strings in a PIRG Group.
+
+ .Parameter Pirg
+  The name of the PIRG.
+
+ .Parameter Name
+  The name of the PIRG Group.
+
+ .Example
+   # Get all users in the "hpcrcf.students" PIRG Group
+   Get-PirgUsernames -Pirg hpcrcf -Name students
+#>
+function Get-PirgGroupUsernames {
+    param(
+        [Parameter(Mandatory=$true)]
+        [String] $Pirg,
+        
+        [Parameter(Mandatory=$true)]
+        [String] $Name
+    )
+
+    Get-PirgGroupUsers -Pirg $Pirg -Name $Name | Select-Object -Property samaccountname
+}
+
+
+<#
+ .Synopsis
+  Add user to PIRG Group.
+
+ .Description
+  Add the given AD user object to the PIRG Group.
+
+ .Parameter Pirg
+  The name of the PIRG.
+
+ .Parameter Group
+  The name of the PIRG Group.
+
+ .Parameter User
+  Username of the user to add.
+
+ .Example
+   # Add Mark to the staff group in the hpcrcf PIRG.
+   Add-PirgUser -Pirg hpcrcf -Group staff -User marka
+#>
+function Add-PirgGroupUser {
+    param(
+        [Parameter(Mandatory=$true)]
+        [String] $Pirg,
+
+        [Parameter(Mandatory=$true)]
+        [String] $Group,
+
+        [Parameter(Mandatory=$true)]
+        [String] $User
+    )
+
+    $PirgName = $Pirg.ToLower()
+    $PirgGroupName = $Group.ToLower()
+    $UserName = $User.ToLower()
+
+    $UserObject = Get-ADUser $UserName
+    if (!($UserObject)) {
+        Write-Output "User not found, exiting."
+        return
+    }
+
+    $GroupObject = Get-PirgGroup -Pirg $PirgName -Name $PirgGroupName
+    if (!($GroupObject)) {
+        Write-Output "PIRG Group not found, exiting."
+        return
+    }
+
+    Add-ADGroupMember -Identity $GroupObject -Members $UserObject
+}
