@@ -8,7 +8,12 @@ New-Variable -Name PIRGSOU -Value "ou=PIRGS,ou=RACS,ou=Groups,ou=IS,ou=units,dc=
   Returns the next available gidNumber in the RACS gid range (300,000 - 400,000).
 #>
 function Get-NextPirgGid {
-    return (Get-ADGroup -Properties gidNumber -SearchBase $PIRGSOU -Filter * | Select-Object gidNumber | Sort-Object -Property gidNumber | Select-Object -Last 1).gidNumber + 1
+    param(
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
+    )
+    return (Get-ADGroup -Properties gidNumber -SearchBase $PIRGSOU -Filter "*" @params | Select-Object gidNumber | Sort-Object -Property gidNumber | Select-Object -Last 1).gidNumber + 1
 }
 
 ###############################
@@ -32,13 +37,20 @@ function Get-NextPirgGid {
 function Get-Pirg {
     param(
         [Parameter(Mandatory=$true)]
-        [String] $Name
+        [String] $Name,
+
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
     )
 
     $PirgName = $Name.ToLower()
-
     $PirgFullName = "is.racs.pirg.$PirgName"
-    Get-ADGroup -Properties * -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential}
+
+    Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params
 }
 
 
@@ -59,7 +71,11 @@ function Get-Pirg {
 function New-Pirg {
     param(
         [Parameter(Mandatory=$true)]
-        [String] $Name
+        [String] $Name,
+
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
     )
 
     if (!($Name -cmatch "^[a-z][a-z0-9_][a-z0-9]+$")) {
@@ -69,13 +85,16 @@ function New-Pirg {
 
     $PirgName = $Name.ToLower()
 
-    $ExistingGroup = Get-Pirg -Name $PirgName
+    $ExistingGroup = Get-Pirg -Name $PirgName @params
     if ($ExistingGroup) {
         Write-Output "PIRG already exists, exiting."
         return
     }
 
-    New-ADGroup -Name "is.racs.pirg.$PirgName" -Path $PIRGSOU -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid)} -GroupCategory Security -GroupScope Universal
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential}
+
+    New-ADGroup -Name "is.racs.pirg.$PirgName" -Path $PIRGSOU -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid)} -GroupCategory Security -GroupScope Universal @params
 }
 
 <#
@@ -95,18 +114,25 @@ function New-Pirg {
 function Get-PirgUsers {
     param(
         [Parameter(Mandatory=$true)]
-        [String] $Name
+        [String] $Name,
+
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
     )
 
     $PirgName = $Name.ToLower()
 
-    $GroupObject = Get-Pirg -Name $PirgName
+    $GroupObject = Get-Pirg -Name $PirgName @params
     if (!($GroupObject)) {
         Write-Output "PIRG not found, exiting."
         return
     }
 
-    Get-ADGroupMember $GroupObject
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential}
+
+    Get-ADGroupMember $GroupObject @params
 }
 
 <#
@@ -126,10 +152,17 @@ function Get-PirgUsers {
 function Get-PirgUsernames {
     param(
         [Parameter(Mandatory=$true)]
-        [String] $Name
+        [String] $Name,
+
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
     )
 
-    Get-PirgUsers -Pirg $Pirg -Name $Name | Select-Object -Property samaccountname
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential}
+
+    Get-PirgUsers -Pirg $Pirg -Name $Name @params | Select-Object -Property samaccountname
 }
 
 <#
@@ -155,25 +188,32 @@ function Add-PirgUser {
         [String] $Pirg,
 
         [Parameter(Mandatory=$true)]
-        [String] $User
+        [String] $User,
+        
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
     )
 
     $PirgName = $Pirg.ToLower()
     $UserName = $User.ToLower()
 
-    $UserObject = Get-ADUser $UserName
+    $UserObject = Get-ADUser $UserName @params
     if (!($UserObject)) {
         Write-Output "User not found, exiting."
         return
     }
 
-    $GroupObject = Get-Pirg -Name $PirgName
+    $GroupObject = Get-Pirg -Name $PirgName @params
     if (!($GroupObject)) {
         Write-Output "PIRG not found, exiting."
         return
     }
 
-    Add-ADGroupMember -Identity $GroupObject -Members $UserObject
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential}
+
+    Add-ADGroupMember -Identity $GroupObject -Members $UserObject @params
 }
 
 ###############################
@@ -203,13 +243,21 @@ function Get-PirgGroup {
         [String] $Pirg,
 
         [Parameter(Mandatory=$true)]
-        [String] $Name
+        [String] $Name,
+
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
     )
 
     $PirgName = $Pirg.ToLower()
     $PirgGroupName = $Name.ToLower()
 
     $PirgGroupFullName = "is.racs.pirg.$PirgName.$PirgGroupName"
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential}
+
     Get-ADGroup -Properties * -Filter "name -like '$PirgGroupFullName'" -SearchBase $PIRGSOU
 }
 
@@ -236,7 +284,11 @@ function New-PirgGroup {
         [String] $Pirg,
 
         [Parameter(Mandatory=$true)]
-        [String] $Name
+        [String] $Name,
+
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
     )
 
     if (!($Name -cmatch "^[a-z][a-z0-9_][a-z0-9]+$")) {
@@ -258,6 +310,9 @@ function New-PirgGroup {
         Write-Output "PIRG not found, exiting."
         return
     }
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential}
 
     New-ADGroup -Name "is.racs.pirg.$PirgName.$PirgGroupName" -Path $PIRGSOU -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid)} -GroupCategory Security -GroupScope Universal
 }
@@ -286,7 +341,11 @@ function Get-PirgGroupUsers {
         [String] $Pirg,
         
         [Parameter(Mandatory=$true)]
-        [String] $Name
+        [String] $Name,
+
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
     )
 
     $PirgName = $Pirg.ToLower()
@@ -297,6 +356,10 @@ function Get-PirgGroupUsers {
         Write-Output "PIRG Group not found, exiting."
         return
     }
+    
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential}
+
     Get-ADGroupMember $GroupObject
 }
 
@@ -323,8 +386,15 @@ function Get-PirgGroupUsernames {
         [String] $Pirg,
         
         [Parameter(Mandatory=$true)]
-        [String] $Name
+        [String] $Name,
+
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
     )
+    
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential}
 
     Get-PirgGroupUsers -Pirg $Pirg -Name $Name | Select-Object -Property samaccountname
 }
@@ -359,7 +429,11 @@ function Add-PirgGroupUser {
         [String] $Group,
 
         [Parameter(Mandatory=$true)]
-        [String] $User
+        [String] $User,
+
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
     )
 
     $PirgName = $Pirg.ToLower()
@@ -377,6 +451,9 @@ function Add-PirgGroupUser {
         Write-Output "PIRG Group not found, exiting."
         return
     }
+    
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential}
 
     Add-ADGroupMember -Identity $GroupObject -Members $UserObject
 }
