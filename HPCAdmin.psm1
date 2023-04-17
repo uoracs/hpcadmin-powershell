@@ -78,7 +78,7 @@ function New-Pirg {
         [PSCredential] $Credential
     )
 
-    if (!($Name -cmatch "^[a-z][a-z0-9_][a-z0-9]+$")) {
+    if (!($Name -cmatch "^[a-z][a-z0-9_]+[a-z0-9]$")) {
         Write-Error "Name must be lowercase alphanumeric, start with a letter, and may contain underscores"
         return
     }
@@ -87,7 +87,7 @@ function New-Pirg {
 
     $ExistingGroup = Get-Pirg -Name $PirgName @params
     if ($ExistingGroup) {
-        Write-Output "PIRG already exists, exiting."
+        Write-Output "PIRG already exists"
         return
     }
 
@@ -125,7 +125,7 @@ function Get-PirgUsers {
 
     $GroupObject = Get-Pirg -Name $PirgName @params
     if (!($GroupObject)) {
-        Write-Output "PIRG not found, exiting."
+        Write-Output "PIRG not found"
         return
     }
 
@@ -162,7 +162,7 @@ function Get-PirgUsernames {
     $params = @{}
     if ($Credential) { $params['Credential'] = $Credential}
 
-    Get-PirgUsers -Pirg $Pirg -Name $Name @params | Select-Object -Property samaccountname
+    Get-PirgUsers -Name $Name @params | Select-Object -Property samaccountname
 }
 
 <#
@@ -195,18 +195,21 @@ function Add-PirgUser {
         [PSCredential] $Credential
     )
 
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential}
+
     $PirgName = $Pirg.ToLower()
     $UserName = $User.ToLower()
 
     $UserObject = Get-ADUser $UserName @params
     if (!($UserObject)) {
-        Write-Output "User not found, exiting."
+        Write-Output "User not found"
         return
     }
 
     $GroupObject = Get-Pirg -Name $PirgName @params
     if (!($GroupObject)) {
-        Write-Output "PIRG not found, exiting."
+        Write-Output "PIRG not found"
         return
     }
 
@@ -215,6 +218,63 @@ function Add-PirgUser {
 
     Add-ADGroupMember -Identity $GroupObject -Members $UserObject @params
 }
+
+
+<#
+ .Synopsis
+  Remove user from PIRG.
+
+ .Description
+  Remove the given AD user object from the PIRG.
+
+ .Parameter Pirg
+  The name of the PIRG.
+
+ .Parameter User
+  Username of the user to remove.
+
+ .Example
+   # Remove Mark from the hpcrcf PIRG.
+   Remove-PirgUser -Pirg hpcrcf -User marka
+#>
+function Remove-PirgUser {
+    param(
+        [Parameter(Mandatory=$true)]
+        [String] $Pirg,
+
+        [Parameter(Mandatory=$true)]
+        [String] $User,
+        
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
+    )
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential}
+
+    $PirgName = $Pirg.ToLower()
+    $UserName = $User.ToLower()
+
+    $UserObject = Get-ADUser $UserName @params
+    if (!($UserObject)) {
+        Write-Output "User not found"
+        return
+    }
+
+    $GroupObject = Get-Pirg -Name $PirgName @params
+    if (!($GroupObject)) {
+        Write-Output "PIRG not found"
+        return
+    }
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential}
+
+    Remove-ADGroupMember -Identity $GroupObject -Members $UserObject @params -Confirm:$false
+}
+
+
 
 ###############################
 ###  Pirg Group Management  ###
@@ -291,7 +351,7 @@ function New-PirgGroup {
         [PSCredential] $Credential
     )
 
-    if (!($Name -cmatch "^[a-z][a-z0-9_][a-z0-9]+$")) {
+    if (!($Name -cmatch "^[a-z][a-z0-9_]+[a-z0-9]$")) {
         Write-Error "Name must be lowercase alphanumeric, start with a letter, and may contain underscores"
         return
     }
@@ -301,13 +361,13 @@ function New-PirgGroup {
 
     $ExistingGroup = Get-PirgGroup -Pirg $PirgName -Name $PirgGroupName
     if ($ExistingGroup) {
-        Write-Output "PIRG Group already exists, exiting."
+        Write-Output "PIRG Group already exists"
         return
     }
 
     $PirgExists = Get-Pirg -Name $PirgName
     if (!($PirgExists)) {
-        Write-Output "PIRG not found, exiting."
+        Write-Output "PIRG not found"
         return
     }
 
@@ -353,7 +413,7 @@ function Get-PirgGroupUsers {
 
     $GroupObject = Get-PirgGroup -Pirg $PirgName -Name $PirgGroupName
     if (!($GroupObject)) {
-        Write-Output "PIRG Group not found, exiting."
+        Write-Output "PIRG Group not found"
         return
     }
     
@@ -442,13 +502,13 @@ function Add-PirgGroupUser {
 
     $UserObject = Get-ADUser $UserName
     if (!($UserObject)) {
-        Write-Output "User not found, exiting."
+        Write-Output "User not found"
         return
     }
 
     $GroupObject = Get-PirgGroup -Pirg $PirgName -Name $PirgGroupName
     if (!($GroupObject)) {
-        Write-Output "PIRG Group not found, exiting."
+        Write-Output "PIRG Group not found"
         return
     }
     
@@ -456,4 +516,62 @@ function Add-PirgGroupUser {
     if ($Credential) { $params['Credential'] = $Credential}
 
     Add-ADGroupMember -Identity $GroupObject -Members $UserObject
+}
+
+<#
+ .Synopsis
+  Remove user from PIRG Group.
+
+ .Description
+  Remove the given AD user object from the PIRG Group.
+
+ .Parameter Pirg
+  The name of the PIRG.
+
+ .Parameter Group
+  The name of the PIRG Group.
+
+ .Parameter User
+  Username of the user to remove.
+
+ .Example
+   # Remove Mark from the staff group in the hpcrcf PIRG.
+   Remove-PirgUser -Pirg hpcrcf -Group staff -User marka
+#>
+function Remove-PirgGroupUser {
+    param(
+        [Parameter(Mandatory=$true)]
+        [String] $Pirg,
+
+        [Parameter(Mandatory=$true)]
+        [String] $Group,
+
+        [Parameter(Mandatory=$true)]
+        [String] $User,
+
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
+    )
+
+    $PirgName = $Pirg.ToLower()
+    $PirgGroupName = $Group.ToLower()
+    $UserName = $User.ToLower()
+
+    $UserObject = Get-ADUser $UserName
+    if (!($UserObject)) {
+        Write-Output "User not found"
+        return
+    }
+
+    $GroupObject = Get-PirgGroup -Pirg $PirgName -Name $PirgGroupName
+    if (!($GroupObject)) {
+        Write-Output "PIRG Group not found"
+        return
+    }
+    
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential}
+
+    Remove-ADGroupMember -Identity $GroupObject -Members $UserObject -Confirm:$false
 }
