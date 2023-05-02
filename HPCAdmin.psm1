@@ -16,6 +16,81 @@ function Get-NextPirgGid {
     return (Get-ADGroup -Properties gidNumber -SearchBase $PIRGSOU -Filter "*" @params | Select-Object gidNumber | Sort-Object -Property gidNumber | Select-Object -Last 1).gidNumber + 1
 }
 
+<#
+ .Synopsis
+  Get the next OU path for the Pirg.
+
+ .Description
+  Returns the full path to the Pirg's OU
+  
+ .Parameter Name
+  The name of the PIRG to get OU path for.
+#>
+function Get-PirgPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [String] $Name
+    )
+    return "ou=" + $Name + "," + $PIRGSOU
+}
+
+<#
+ .Synopsis
+  Cleanses Pirg name
+
+ .Description
+  Returns short name of pirg no matter the type of input object
+  
+ .Parameter Pirg
+  Pirg to get name for. Can be string or ADGroup object
+#>
+function Get-CleansedPirgName {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Pirg
+    )
+
+    if ($Pirg.GetType().Name -eq "ADGroup") {
+        return $Pirg.Name.split(".")[-1].ToLower()
+    }
+
+    if ($Pirg.GetType().Name -eq "String") {
+        if ($Pirg.contains(".")) {
+            return $Pirg.split(".")[-1].ToLower()
+        }
+        return $Pirg.ToLower()
+    }
+
+    Write-Error "Invalid Pirg object used"
+}
+
+<#
+ .Synopsis
+  Cleanses User name
+
+ .Description
+  Returns username of user no matter the type of input object
+  
+ .Parameter User
+  User to get username for. Can be string or ADUser object
+#>
+function Get-CleansedUserName {
+    param(
+        [Parameter(Mandatory = $true)]
+        $User
+    )
+
+    if ($User.GetType().Name -eq "ADUser") {
+        return [string]$User.samaccountname
+    }
+
+    if ($User.GetType().Name -eq "String") {
+        return $User.ToLower()
+    }
+
+    Write-Error "Invalid User object used"
+}
+
 ###############################
 ###  Pirg Management        ###
 ###############################
@@ -36,21 +111,44 @@ function Get-NextPirgGid {
 #>
 function Get-Pirg {
     param(
-        [Parameter(Mandatory=$true)]
-        [String] $Name,
+        [Parameter(Mandatory = $true)]
+        $Name,
 
         [System.Management.Automation.Credential()]
         [System.Management.Automation.PSCredential]
         [PSCredential] $Credential
     )
 
-    $PirgName = $Name.ToLower()
+    $PirgName = Get-CleansedPirgName $Name
     $PirgFullName = "is.racs.pirg.$PirgName"
+    $PirgPath = Get-PirgPath -Name $PirgName
 
     $params = @{}
-    if ($Credential) { $params['Credential'] = $Credential}
+    if ($Credential) { $params['Credential'] = $Credential }
 
-    Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params
+    Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PirgPath @params
+}
+
+<#
+ .Synopsis
+  Get list of PIRG user groups.
+
+ .Description
+  Simple wrapper for Get-ADGroup for getting PIRG AD groups from our PIRGS OU.
+#>
+function Get-Pirgs {
+    param(
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
+    )
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    $filter = '^is\.racs\.pirg\.\w+$'
+
+    Get-ADGroup -Properties "*" -Filter "*" -SearchBase $PIRGSOU @params | Where-Object {$_.samaccountname -match $filter}
 }
 
 
@@ -70,7 +168,7 @@ function Get-Pirg {
 #>
 function New-Pirg {
     param(
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory = $true)]
         [String] $Name,
 
         [System.Management.Automation.Credential()]
@@ -83,7 +181,10 @@ function New-Pirg {
         return
     }
 
-    $PirgName = $Name.ToLower()
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    $PirgName = Get-CleansedPirgName $Name
 
     $ExistingGroup = Get-Pirg -Name $PirgName @params
     if ($ExistingGroup) {
@@ -91,10 +192,13 @@ function New-Pirg {
         return
     }
 
-    $params = @{}
-    if ($Credential) { $params['Credential'] = $Credential}
+    New-ADOrganizationalUnit -Name $PirgName -Path $PIRGSOU @params
 
-    New-ADGroup -Name "is.racs.pirg.$PirgName" -Path $PIRGSOU -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid)} -GroupCategory Security -GroupScope Universal @params
+    $PirgPath = Get-PirgPath -Name $PirgName
+
+    New-ADGroup -Name "is.racs.pirg.$PirgName" -Path $PirgPath -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid) } -GroupCategory Security -GroupScope Universal @params
+    New-ADGroup -Name "is.racs.pirg.$PirgName.pi" -Path $PirgPath -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid) } -GroupCategory Security -GroupScope Universal @params
+    New-ADGroup -Name "is.racs.pirg.$PirgName.admins" -Path $PirgPath -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid) } -GroupCategory Security -GroupScope Universal @params
 }
 
 <#
@@ -104,24 +208,24 @@ function New-Pirg {
  .Description
   Return a list of all AD users in a PIRG.
 
- .Parameter Name
+ .Parameter Pirg
   The name of the PIRG.
 
  .Example
    # Get all users in the "hpcrcf" PIRG
-   Get-PirgUsers -Name hpcrcf 
+   Get-PirgUsers -Pirg hpcrcf 
 #>
 function Get-PirgUsers {
     param(
-        [Parameter(Mandatory=$true)]
-        [String] $Name,
+        [Parameter(Mandatory = $true)]
+        $Pirg,
 
         [System.Management.Automation.Credential()]
         [System.Management.Automation.PSCredential]
         [PSCredential] $Credential
     )
 
-    $PirgName = $Name.ToLower()
+    $PirgName = Get-CleansedPirgName $Pirg
 
     $GroupObject = Get-Pirg -Name $PirgName @params
     if (!($GroupObject)) {
@@ -130,7 +234,7 @@ function Get-PirgUsers {
     }
 
     $params = @{}
-    if ($Credential) { $params['Credential'] = $Credential}
+    if ($Credential) { $params['Credential'] = $Credential }
 
     Get-ADGroupMember $GroupObject @params
 }
@@ -142,27 +246,29 @@ function Get-PirgUsers {
  .Description
   Return a list of username strings in a PIRG.
 
- .Parameter Name
+ .Parameter Pirg
   The name of the PIRG.
 
  .Example
-   # Get a list of username strings in the "hpcrcf.students" PIRG Group
-   Get-PirgUsernames -Pirg hpcrcf -Name students
+   # Get a list of username strings in the "racs" PIRG 
+   Get-PirgUsernames -Pirg racs 
 #>
 function Get-PirgUsernames {
     param(
-        [Parameter(Mandatory=$true)]
-        [String] $Name,
+        [Parameter(Mandatory = $true)]
+        $Pirg,
 
         [System.Management.Automation.Credential()]
         [System.Management.Automation.PSCredential]
         [PSCredential] $Credential
     )
 
-    $params = @{}
-    if ($Credential) { $params['Credential'] = $Credential}
+    $PirgName = Get-CleansedPirgName $Pirg
 
-    Get-PirgUsers -Name $Name @params | Select-Object -Property samaccountname
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    Get-PirgUsers -Pirg $PirgName @params | Select-Object -Property samaccountname
 }
 
 <#
@@ -184,11 +290,11 @@ function Get-PirgUsernames {
 #>
 function Add-PirgUser {
     param(
-        [Parameter(Mandatory=$true)]
-        [String] $Pirg,
+        [Parameter(Mandatory = $true)]
+        $Pirg,
 
-        [Parameter(Mandatory=$true)]
-        [String] $User,
+        [Parameter(Mandatory = $true)]
+        $User,
         
         [System.Management.Automation.Credential()]
         [System.Management.Automation.PSCredential]
@@ -196,10 +302,10 @@ function Add-PirgUser {
     )
 
     $params = @{}
-    if ($Credential) { $params['Credential'] = $Credential}
+    if ($Credential) { $params['Credential'] = $Credential }
 
-    $PirgName = $Pirg.ToLower()
-    $UserName = $User.ToLower()
+    $PirgName = Get-CleansedPirgName $Pirg
+    $UserName = Get-CleansedUserName $User
 
     $UserObject = Get-ADUser $UserName @params
     if (!($UserObject)) {
@@ -214,7 +320,7 @@ function Add-PirgUser {
     }
 
     $params = @{}
-    if ($Credential) { $params['Credential'] = $Credential}
+    if ($Credential) { $params['Credential'] = $Credential }
 
     Add-ADGroupMember -Identity $GroupObject -Members $UserObject @params
 }
@@ -239,11 +345,11 @@ function Add-PirgUser {
 #>
 function Remove-PirgUser {
     param(
-        [Parameter(Mandatory=$true)]
-        [String] $Pirg,
+        [Parameter(Mandatory = $true)]
+        $Pirg,
 
-        [Parameter(Mandatory=$true)]
-        [String] $User,
+        [Parameter(Mandatory = $true)]
+        $User,
         
         [System.Management.Automation.Credential()]
         [System.Management.Automation.PSCredential]
@@ -251,10 +357,10 @@ function Remove-PirgUser {
     )
 
     $params = @{}
-    if ($Credential) { $params['Credential'] = $Credential}
+    if ($Credential) { $params['Credential'] = $Credential }
 
-    $PirgName = $Pirg.ToLower()
-    $UserName = $User.ToLower()
+    $PirgName = Get-CleansedPirgName $Pirg
+    $UserName = Get-CleansedUserName $User
 
     $UserObject = Get-ADUser $UserName @params
     if (!($UserObject)) {
@@ -269,11 +375,176 @@ function Remove-PirgUser {
     }
 
     $params = @{}
-    if ($Credential) { $params['Credential'] = $Credential}
+    if ($Credential) { $params['Credential'] = $Credential }
 
     Remove-ADGroupMember -Identity $GroupObject -Members $UserObject @params -Confirm:$false
 }
 
+<#
+ .Synopsis
+  Set the user to the owner of the PIRG.
+
+ .Description
+  Sets the user as the only user in the PIRG PI group
+
+ .Parameter Pirg
+  The name of the PIRG.
+
+ .Parameter User
+  Username of the user to set.
+
+ .Example
+   # Set Mark as the owner on the hpcrcf PIRG.
+   Set-PirgOwner -Pirg hpcrcf -User marka
+#>
+function Set-PirgOwner {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Pirg,
+
+        [Parameter(Mandatory = $true)]
+        $User,
+        
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
+    )
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    $PirgName = Get-CleansedPirgName $Pirg
+    $UserName = Get-CleansedUserName $User
+
+    $UserObject = Get-ADUser $UserName @params
+    if (!($UserObject)) {
+        Write-Output "User not found"
+        return
+    }
+
+    $PirgAdminGroupName = $PirgName + ".pi"
+    $GroupObject = Get-Pirg -Name $PirgAdminGroupName @params
+    if (!($GroupObject)) {
+        Write-Output "PIRG not found"
+        return
+    }
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    Get-ADGroupMember -Identity $GroupObject | ForEach-Object { Remove-ADGroupMember -Identity $GroupObject $_ @params -Confirm:$false }
+    Add-ADGroupMember -Identity $GroupObject -Members $UserObject @params
+}
+
+<#
+ .Synopsis
+  Add user to PIRG admins.
+
+ .Description
+  Add the given AD user object to the PIRG admins group.
+
+ .Parameter Pirg
+  The name of the PIRG.
+
+ .Parameter User
+  Username of the user to add.
+
+ .Example
+   # Add Mark as an admin to the hpcrcf PIRG.
+   Add-PirgAdmin -Pirg hpcrcf -User marka
+#>
+function Add-PirgAdmin {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Pirg,
+
+        [Parameter(Mandatory = $true)]
+        $User,
+        
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
+    )
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    $PirgName = Get-CleansedPirgName $Pirg
+    $UserName = Get-CleansedUserName $User
+
+    $UserObject = Get-ADUser $UserName @params
+    if (!($UserObject)) {
+        Write-Output "User not found"
+        return
+    }
+
+    $PirgAdminGroupName = $PirgName + ".admins"
+    $GroupObject = Get-Pirg -Name $PirgAdminGroupName @params
+    if (!($GroupObject)) {
+        Write-Output "PIRG not found"
+        return
+    }
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    Add-ADGroupMember -Identity $GroupObject -Members $UserObject @params
+}
+
+<#
+ .Synopsis
+  Remove user from PIRG admins.
+
+ .Description
+  Remove the given AD user object from the PIRG admins group.
+
+ .Parameter Pirg
+  The name of the PIRG.
+
+ .Parameter User
+  Username of the user to remove.
+
+ .Example
+   # Remove Mark as an admin from the hpcrcf PIRG.
+   Remove-PirgAdmin -Pirg hpcrcf -User marka
+#>
+function Remove-PirgAdmin {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Pirg,
+
+        [Parameter(Mandatory = $true)]
+        $User,
+        
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
+    )
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    $PirgName = Get-CleansedPirgName $Pirg
+    $UserName = Get-CleansedUserName $User
+
+    $UserObject = Get-ADUser $UserName @params
+    if (!($UserObject)) {
+        Write-Output "User not found"
+        return
+    }
+
+    $PirgAdminGroupName = $PirgName + ".admins"
+    $GroupObject = Get-Pirg -Name $PirgAdminGroupName @params
+    if (!($GroupObject)) {
+        Write-Output "PIRG not found"
+        return
+    }
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    Remove-ADGroupMember -Identity $GroupObject -Members $UserObject @params -Confirm:$false
+}
 
 
 ###############################
@@ -295,30 +566,31 @@ function Remove-PirgUser {
 
  .Example
    # Get the "students" group details in the "hpcrcf" PIRG.
-   Get-PirgGroup -Pirg hpcrcf -Name students
+   Get-PirgGroup -Pirg hpcrcf -Group students
 #>
 function Get-PirgGroup {
     param(
-        [Parameter(Mandatory=$true)]
-        [String] $Pirg,
+        [Parameter(Mandatory = $true)]
+        $Pirg,
 
-        [Parameter(Mandatory=$true)]
-        [String] $Name,
+        [Parameter(Mandatory = $true)]
+        [String] $Group,
 
         [System.Management.Automation.Credential()]
         [System.Management.Automation.PSCredential]
         [PSCredential] $Credential
     )
 
-    $PirgName = $Pirg.ToLower()
-    $PirgGroupName = $Name.ToLower()
+    $PirgName = Get-CleansedPirgName $Pirg
+    $PirgGroupName = $Group.ToLower()
+    $PirgPath = Get-PirgPath -Name $PirgName
 
     $PirgGroupFullName = "is.racs.pirg.$PirgName.$PirgGroupName"
 
     $params = @{}
-    if ($Credential) { $params['Credential'] = $Credential}
+    if ($Credential) { $params['Credential'] = $Credential }
 
-    Get-ADGroup -Properties * -Filter "name -like '$PirgGroupFullName'" -SearchBase $PIRGSOU
+    Get-ADGroup -Properties * -Filter "name -like '$PirgGroupFullName'" -SearchBase $PirgPath @params
 }
 
 <#
@@ -331,35 +603,36 @@ function Get-PirgGroup {
  .Parameter Pirg
   The name of the PIRG to add the group to.
 
- .Parameter Name
+ .Parameter Group
   The name of the Group, limited to alphanumeric characters. This name will be converted to all lowercase for creation.
 
  .Example
    # Create the "students" Group in the "hpcrcf" PIRG.
-   New-PirgGroup -Pirg hpcrcf -Name students
+   New-PirgGroup -Pirg hpcrcf -Group students
 #>
 function New-PirgGroup {
     param(
-        [Parameter(Mandatory=$true)]
-        [String] $Pirg,
+        [Parameter(Mandatory = $true)]
+        $Pirg,
 
-        [Parameter(Mandatory=$true)]
-        [String] $Name,
+        [Parameter(Mandatory = $true)]
+        [String] $Group,
 
         [System.Management.Automation.Credential()]
         [System.Management.Automation.PSCredential]
         [PSCredential] $Credential
     )
 
-    if (!($Name -cmatch "^[a-z][a-z0-9_]+[a-z0-9]$")) {
+    if (!($Group -cmatch "^[a-z][a-z0-9_]+[a-z0-9]$")) {
         Write-Error "Name must be lowercase alphanumeric, start with a letter, and may contain underscores"
         return
     }
 
-    $PirgName = $Pirg.ToLower()
-    $PirgGroupName = $Name.ToLower()
+    $PirgName = Get-CleansedPirgName $Pirg
+    $PirgGroupName = $Group.ToLower()
+    $PirgPath = Get-PirgPath -Name $PirgName
 
-    $ExistingGroup = Get-PirgGroup -Pirg $PirgName -Name $PirgGroupName
+    $ExistingGroup = Get-PirgGroup -Pirg $PirgName -Group $PirgGroupName
     if ($ExistingGroup) {
         Write-Output "PIRG Group already exists"
         return
@@ -372,9 +645,9 @@ function New-PirgGroup {
     }
 
     $params = @{}
-    if ($Credential) { $params['Credential'] = $Credential}
+    if ($Credential) { $params['Credential'] = $Credential }
 
-    New-ADGroup -Name "is.racs.pirg.$PirgName.$PirgGroupName" -Path $PIRGSOU -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid)} -GroupCategory Security -GroupScope Universal
+    New-ADGroup -Name "is.racs.pirg.$PirgName.$PirgGroupName" -Path $PirgPath -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid) } -GroupCategory Security -GroupScope Universal
 }
 
 
@@ -388,19 +661,19 @@ function New-PirgGroup {
  .Parameter Pirg
   The name of the PIRG.
 
- .Parameter Name
+ .Parameter Group
   The name of the PIRG Group.
 
  .Example
    # Get all users in the "hpcrcf.students" PIRG Group
-   Get-PirgUsers -Pirg hpcrcf -Name students
+   Get-PirgUsers -Pirg hpcrcf -Group students
 #>
 function Get-PirgGroupUsers {
     param(
-        [Parameter(Mandatory=$true)]
-        [String] $Pirg,
+        [Parameter(Mandatory = $true)]
+        $Pirg,
         
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory = $true)]
         [String] $Name,
 
         [System.Management.Automation.Credential()]
@@ -408,19 +681,19 @@ function Get-PirgGroupUsers {
         [PSCredential] $Credential
     )
 
-    $PirgName = $Pirg.ToLower()
-    $PirgGroupName = $Name.ToLower()
+    $PirgName = Get-CleansedPirgName $Pirg
+    $PirgGroupName = $Group.ToLower()
 
-    $GroupObject = Get-PirgGroup -Pirg $PirgName -Name $PirgGroupName
+    $GroupObject = Get-PirgGroup -Pirg $PirgName -Group $PirgGroupName
     if (!($GroupObject)) {
         Write-Output "PIRG Group not found"
         return
     }
     
     $params = @{}
-    if ($Credential) { $params['Credential'] = $Credential}
+    if ($Credential) { $params['Credential'] = $Credential }
 
-    Get-ADGroupMember $GroupObject
+    Get-ADGroupMember $GroupObject @params
 }
 
 <#
@@ -433,20 +706,20 @@ function Get-PirgGroupUsers {
  .Parameter Pirg
   The name of the PIRG.
 
- .Parameter Name
+ .Parameter Group
   The name of the PIRG Group.
 
  .Example
    # Get all users in the "hpcrcf.students" PIRG Group
-   Get-PirgUsernames -Pirg hpcrcf -Name students
+   Get-PirgUsernames -Pirg hpcrcf -Group students
 #>
 function Get-PirgGroupUsernames {
     param(
-        [Parameter(Mandatory=$true)]
-        [String] $Pirg,
+        [Parameter(Mandatory = $true)]
+        $Pirg,
         
-        [Parameter(Mandatory=$true)]
-        [String] $Name,
+        [Parameter(Mandatory = $true)]
+        [String] $Group,
 
         [System.Management.Automation.Credential()]
         [System.Management.Automation.PSCredential]
@@ -454,9 +727,9 @@ function Get-PirgGroupUsernames {
     )
     
     $params = @{}
-    if ($Credential) { $params['Credential'] = $Credential}
+    if ($Credential) { $params['Credential'] = $Credential }
 
-    Get-PirgGroupUsers -Pirg $Pirg -Name $Name | Select-Object -Property samaccountname
+    Get-PirgGroupUsers -Pirg $Pirg -Group $Group $params | Select-Object -Property samaccountname
 }
 
 
@@ -482,13 +755,13 @@ function Get-PirgGroupUsernames {
 #>
 function Add-PirgGroupUser {
     param(
-        [Parameter(Mandatory=$true)]
-        [String] $Pirg,
+        [Parameter(Mandatory = $true)]
+        $Pirg,
 
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory = $true)]
         [String] $Group,
 
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory = $true)]
         [String] $User,
 
         [System.Management.Automation.Credential()]
@@ -496,26 +769,27 @@ function Add-PirgGroupUser {
         [PSCredential] $Credential
     )
 
-    $PirgName = $Pirg.ToLower()
+    $PirgName = Get-CleansedPirgName $Pirg
     $PirgGroupName = $Group.ToLower()
     $UserName = $User.ToLower()
 
-    $UserObject = Get-ADUser $UserName
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    $UserObject = Get-ADUser $UserName @params
     if (!($UserObject)) {
         Write-Output "User not found"
         return
     }
 
-    $GroupObject = Get-PirgGroup -Pirg $PirgName -Name $PirgGroupName
+    $GroupObject = Get-PirgGroup -Pirg $PirgName -Group $PirgGroupName @params
     if (!($GroupObject)) {
         Write-Output "PIRG Group not found"
         return
     }
     
-    $params = @{}
-    if ($Credential) { $params['Credential'] = $Credential}
 
-    Add-ADGroupMember -Identity $GroupObject -Members $UserObject
+    Add-ADGroupMember -Identity $GroupObject -Members $UserObject @params
 }
 
 <#
@@ -540,13 +814,13 @@ function Add-PirgGroupUser {
 #>
 function Remove-PirgGroupUser {
     param(
-        [Parameter(Mandatory=$true)]
-        [String] $Pirg,
+        [Parameter(Mandatory = $true)]
+        $Pirg,
 
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory = $true)]
         [String] $Group,
 
-        [Parameter(Mandatory=$true)]
+        [Parameter(Mandatory = $true)]
         [String] $User,
 
         [System.Management.Automation.Credential()]
@@ -554,24 +828,54 @@ function Remove-PirgGroupUser {
         [PSCredential] $Credential
     )
 
-    $PirgName = $Pirg.ToLower()
+    $PirgName = Get-CleansedPirgName $Pirg
     $PirgGroupName = $Group.ToLower()
     $UserName = $User.ToLower()
 
-    $UserObject = Get-ADUser $UserName
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    $UserObject = Get-ADUser $UserName @params
     if (!($UserObject)) {
         Write-Output "User not found"
         return
     }
 
-    $GroupObject = Get-PirgGroup -Pirg $PirgName -Name $PirgGroupName
+    $GroupObject = Get-PirgGroup -Pirg $PirgName -Group $PirgGroupName @params
     if (!($GroupObject)) {
         Write-Output "PIRG Group not found"
         return
     }
     
-    $params = @{}
-    if ($Credential) { $params['Credential'] = $Credential}
 
-    Remove-ADGroupMember -Identity $GroupObject -Members $UserObject -Confirm:$false
+    Remove-ADGroupMember -Identity $GroupObject -Members $UserObject -Confirm:$false @params
+}
+
+###############################
+###  Misc Tools             ###
+###############################
+
+<#
+ .Synopsis
+  Get email list for Talapas users.
+
+ .Description
+  Returns a list of email addresses of all users of Talapas.
+#>
+function Get-TalapasUserEmailList {
+    param(
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
+    )
+
+    $emailList = [System.Collections.ArrayList]::new()
+    foreach ($pirg in (Get-Pirgs)) {
+        Write-Output $pirg.name
+        foreach ($user in (Get-PirgUsers -Name $pirg.Name $params)) {
+            [void]$emailList.Add($user.email)
+        }
+    }
+
+    Write-Output $emailList
 }
