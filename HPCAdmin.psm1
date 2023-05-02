@@ -574,8 +574,7 @@ function Set-PirgOwner {
         return
     }
 
-    $PirgAdminGroupName = "is.racs.pirg." + $PirgName + ".pi"
-    $GroupObject = Get-Pirg -Name $PirgAdminGroupName @params
+    $GroupObject = Get-PirgOwnerGroup -Pirg $PirgName @params
     if (!($GroupObject)) {
         Write-Output "PIRG not found"
         return
