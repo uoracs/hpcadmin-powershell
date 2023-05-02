@@ -130,6 +130,72 @@ function Get-Pirg {
 
 <#
  .Synopsis
+  Get the details of a PIRG admin group.
+
+ .Description
+  Simple wrapper for Get-ADGroup for getting PIRG admin AD groups from our PIRGS OU.
+
+ .Parameter Name
+  The name of the PIRG to get admin details for.
+
+ .Example
+   # Get the hpcrcf admin PIRG AD group details.
+   Get-PirgAdminGroup -Pirg hpcrcf
+#>
+function Get-PirgAdminGroup {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Pirg,
+
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
+    )
+
+    $PirgName = Get-CleansedPirgName $Pirg
+    $PirgFullName = "is.racs.pirg.$PirgName.admins"
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params
+}
+
+<#
+ .Synopsis
+  Get the details of a PIRG owner group.
+
+ .Description
+  Simple wrapper for Get-ADGroup for getting PIRG owner AD groups from our PIRGS OU.
+
+ .Parameter Name
+  The name of the PIRG to get owner details for.
+
+ .Example
+   # Get the hpcrcf owner PIRG AD group details.
+   Get-PirgOwnerGroup -Pirg hpcrcf
+#>
+function Get-PirgOwnerGroup {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Pirg,
+
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
+    )
+
+    $PirgName = Get-CleansedPirgName $Pirg
+    $PirgFullName = "is.racs.pirg.$PirgName.owner"
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params
+}
+
+<#
+ .Synopsis
   Get list of PIRG user groups.
 
  .Description
@@ -276,6 +342,44 @@ function Get-PirgUsers {
     $PirgName = Get-CleansedPirgName $Pirg
 
     $GroupObject = Get-Pirg -Name $PirgName @params
+    if (!($GroupObject)) {
+        Write-Output "PIRG not found"
+        return
+    }
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    Get-ADGroupMember $GroupObject @params
+}
+
+<#
+ .Synopsis
+  Get admins of a PIRG.
+
+ .Description
+  Return a list of all AD users that are admins of a PIRG.
+
+ .Parameter Pirg
+  The name of the PIRG.
+
+ .Example
+   # Get all admins in the "hpcrcf" PIRG
+   Get-PirgAdmins -Pirg hpcrcf 
+#>
+function Get-PirgAdmins {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Pirg,
+
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
+    )
+
+    $PirgName = Get-CleansedPirgName $Pirg
+
+    $GroupObject = Get-PirgAdminGroup -Name $PirgName @params
     if (!($GroupObject)) {
         Write-Output "PIRG not found"
         return
@@ -917,13 +1021,50 @@ function Get-TalapasUserEmailList {
         [PSCredential] $Credential
     )
 
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
     $emailList = [System.Collections.ArrayList]::new()
-    foreach ($pirg in (Get-Pirgs)) {
-        Write-Output $pirg.name
-        foreach ($user in (Get-PirgUsers -Name $pirg.Name $params)) {
-            [void]$emailList.Add($user.email)
+    foreach ($pirg in (Get-Pirgs @params)) {
+        foreach ($user in (Get-PirgUsers -Pirg $pirg @params)) {
+            $user = Get-ADUser $user -Properties mail @params
+            if (!($emailList.Contains($user.mail))) {
+                [void]$emailList.Add($user.mail)
+            }
         }
     }
 
-    Write-Output $emailList
+    $emailString = $emailList -join ";"
+    Write-Output $emailString
+}
+
+<#
+ .Synopsis
+  Get email list for Talapas admins.
+
+ .Description
+  Returns a list of email addresses of all admins of PIRGs on Talapas.
+#>
+function Get-TalapasAdminEmailList {
+    param(
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
+    )
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    $emailList = [System.Collections.ArrayList]::new()
+    foreach ($pirg in (Get-Pirgs @params)) {
+        foreach ($user in (Get-PirgAdmins -Pirg $pirg @params)) {
+            $user = Get-ADUser $user -Properties mail @params
+            if (!($emailList.Contains($user.mail))) {
+                [void]$emailList.Add($user.mail)
+            }
+        }
+    }
+
+    $emailString = $emailList -join ";"
+    Write-Output $emailString
 }
