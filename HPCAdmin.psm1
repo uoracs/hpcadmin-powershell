@@ -186,7 +186,7 @@ function Get-PirgOwnerGroup {
     )
 
     $PirgName = Get-CleansedPirgName $Pirg
-    $PirgFullName = "is.racs.pirg.$PirgName.owner"
+    $PirgFullName = "is.racs.pirg.$PirgName.pi"
 
     $params = @{}
     if ($Credential) { $params['Credential'] = $Credential }
@@ -574,6 +574,7 @@ function Set-PirgOwner {
         return
     }
 
+    Write-Output "getting pirg owner group for: $PirgName"
     $GroupObject = Get-PirgOwnerGroup -Pirg $PirgName @params
     if (!($GroupObject)) {
         Write-Output "PIRG not found"
