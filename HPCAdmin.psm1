@@ -121,12 +121,11 @@ function Get-Pirg {
 
     $PirgName = Get-CleansedPirgName $Name
     $PirgFullName = "is.racs.pirg.$PirgName"
-    $PirgPath = Get-PirgPath -Name $PirgName
 
     $params = @{}
     if ($Credential) { $params['Credential'] = $Credential }
 
-    Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PirgPath @params
+    Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params
 }
 
 <#
@@ -199,6 +198,55 @@ function New-Pirg {
     New-ADGroup -Name "is.racs.pirg.$PirgName" -Path $PirgPath -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid) } -GroupCategory Security -GroupScope Universal @params
     New-ADGroup -Name "is.racs.pirg.$PirgName.pi" -Path $PirgPath -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid) } -GroupCategory Security -GroupScope Universal @params
     New-ADGroup -Name "is.racs.pirg.$PirgName.admins" -Path $PirgPath -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid) } -GroupCategory Security -GroupScope Universal @params
+    Add-ADGroupMember -Identity is.racs.talapas.users -Members "is.racs.pirg.$PirgName"
+}
+
+<#
+ .Synopsis
+  Delete a PIRG.
+
+ .Description
+  Delete all groups and OU related to the PIRG.
+
+ .Parameter Name
+  The name of the PIRG.
+
+ .Example
+   # Remove the "test" PIRG
+   Remove-Pirg -Name test
+#>
+function Remove-Pirg {
+    [CmdletBinding(SupportsShouldProcess=$true,ConfirmImpact='High')]
+    param(
+        [Parameter(Mandatory = $true)]
+        $Name,
+
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
+    )
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    $PirgName = Get-CleansedPirgName $Name
+
+    $ExistingGroup = Get-Pirg -Name $PirgName @params
+    if (!($ExistingGroup)) {
+        Write-Output "PIRG not found: $PirgName"
+        return
+    }
+
+    $PirgPath = Get-PirgPath $PirgName
+
+    $PirgGroups = Get-ADgroup -Filter * -SearchBase $PirgPath
+    foreach ($group in $PirgGroups) {
+        # just extra safety
+        if ($group.name.startswith("is.racs.pirg")) {
+            Remove-ADGroup -Identity $group -Confirm:$false
+        }
+    }
+    Get-ADOrganizationalUnit -Identity $PirgPath | Set-ADObject -ProtectedFromAccidentalDeletion:$false -PassThru | Remove-ADOrganizationalUnit -Confirm:$false
 }
 
 <#
