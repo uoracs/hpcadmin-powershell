@@ -574,7 +574,6 @@ function Set-PirgOwner {
         return
     }
 
-    Write-Output "getting pirg owner group for: $PirgName"
     $GroupObject = Get-PirgOwnerGroup -Pirg $PirgName @params
     if (!($GroupObject)) {
         Write-Output "PIRG not found"
