@@ -163,19 +163,19 @@ function Get-PirgAdminGroup {
 
 <#
  .Synopsis
-  Get the details of a PIRG owner group.
+  Get the details of a PIRG PI group.
 
  .Description
-  Simple wrapper for Get-ADGroup for getting PIRG owner AD groups from our PIRGS OU.
+  Simple wrapper for Get-ADGroup for getting PIRG PI AD groups from our PIRGS OU.
 
  .Parameter Name
-  The name of the PIRG to get owner details for.
+  The name of the PIRG to get PI details for.
 
  .Example
-   # Get the hpcrcf owner PIRG AD group details.
-   Get-PirgOwnerGroup -Pirg hpcrcf
+   # Get the racs PI PIRG AD group details.
+   Get-PirgPIGroup -Pirg hpcrcf
 #>
-function Get-PirgOwnerGroup {
+function Get-PirgPIGroup {
     param(
         [Parameter(Mandatory = $true)]
         $Pirg,
@@ -534,7 +534,7 @@ function Remove-PirgUser {
 
 <#
  .Synopsis
-  Set the user to the owner of the PIRG.
+  Set the user to the PI of the PIRG.
 
  .Description
   Sets the user as the only user in the PIRG PI group
@@ -546,10 +546,10 @@ function Remove-PirgUser {
   Username of the user to set.
 
  .Example
-   # Set Mark as the owner on the hpcrcf PIRG.
-   Set-PirgOwner -Pirg hpcrcf -User marka
+   # Set Mark as the PI on the racs PIRG.
+   Set-PirgPI -Pirg racs -User marka
 #>
-function Set-PirgOwner {
+function Set-PirgPI {
     param(
         [Parameter(Mandatory = $true)]
         $Pirg,
@@ -574,7 +574,7 @@ function Set-PirgOwner {
         return
     }
 
-    $GroupObject = Get-PirgOwnerGroup -Pirg $PirgName @params
+    $GroupObject = Get-PirgPIGroup -Pirg $PirgName @params
     if (!($GroupObject)) {
         Write-Output "PIRG not found"
         return
