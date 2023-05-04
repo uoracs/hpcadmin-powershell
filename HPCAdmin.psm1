@@ -496,6 +496,8 @@ function Add-PirgUser {
    Remove-PirgUser -Pirg hpcrcf -User marka
 #>
 function Remove-PirgUser {
+    # TODO(lcrown): ensure user exists in pirg group first
+    # TODO(lcrown): remove from admin group
     param(
         [Parameter(Mandatory = $true)]
         $Pirg,
@@ -529,6 +531,8 @@ function Remove-PirgUser {
     $params = @{}
     if ($Credential) { $params['Credential'] = $Credential }
 
+    # TODO(lcrown): check admins group and remove user from that group too
+
     Remove-ADGroupMember -Identity $GroupObject -Members $UserObject @params -Confirm:$false
 }
 
@@ -550,6 +554,7 @@ function Remove-PirgUser {
    Set-PirgPI -Pirg racs -User marka
 #>
 function Set-PirgPI {
+    # TODO(lcrown): ensure user exists in pirg group first
     param(
         [Parameter(Mandatory = $true)]
         $Pirg,
@@ -585,6 +590,7 @@ function Set-PirgPI {
 
     Get-ADGroupMember -Identity $GroupObject | ForEach-Object { Remove-ADGroupMember -Identity $GroupObject $_ @params -Confirm:$false }
     Add-ADGroupMember -Identity $GroupObject -Members $UserObject @params
+    Add-PirgAdmin $UserObject
 }
 
 <#
@@ -605,6 +611,7 @@ function Set-PirgPI {
    Add-PirgAdmin -Pirg hpcrcf -User marka
 #>
 function Add-PirgAdmin {
+    # TODO(lcrown): ensure user exists in pirg group first
     param(
         [Parameter(Mandatory = $true)]
         $Pirg,
