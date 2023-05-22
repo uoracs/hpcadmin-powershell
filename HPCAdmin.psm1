@@ -34,6 +34,7 @@ function Get-PirgPath {
     return "ou=" + $Name + "," + $PIRGSOU
 }
 
+
 <#
  .Synopsis
   Cleanses Pirg name
@@ -89,6 +90,25 @@ function Get-CleansedUserName {
     }
 
     Write-Error "Invalid User object used"
+}
+
+<#
+ .Synopsis
+  Get the existing gidNumber for the Pirg.
+
+ .Description
+  Returns the gidNumber of the Pirg AD group
+  
+ .Parameter Name
+  The name of the PIRG to get OU path for.
+#>
+function Get-PirgGidNumber {
+    param(
+        [Parameter(Mandatory = $true)]
+        [String] $Name
+    )
+    $PirgName = Get-CleansedPirgName $Name
+    Get-Pirg -Name $PirgName | Select-Object gidNumber
 }
 
 ###############################
@@ -534,6 +554,44 @@ function Remove-PirgUser {
     # TODO(lcrown): check admins group and remove user from that group too
 
     Remove-ADGroupMember -Identity $GroupObject -Members $UserObject @params -Confirm:$false
+}
+
+<#
+ .Synopsis
+  TEMP - Sync pirg membership with data from is-hpc-idm-txn
+
+ .Description
+  TEMP - Sync pirg membership with is-hpc-idm-txn
+
+ .Parameter Pirg
+  The name of the PIRG.
+
+ .Example
+   # Sync members for racs
+   Sync-PirgMembers -Pirg racs 
+#>
+function Sync-PirgMembers {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Pirg,
+
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
+    )
+
+    $PirgName = Get-CleansedPirgName $Pirg
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    $pirgJSON = Invoke-WebRequest -Uri "http://is-hpc-idm-txn.uoregon.edu/migrationdata/$PirgName"
+    $pirgData = ConvertFrom-Json $pirgJSON.content
+
+    foreach ($user in $pirgData.users) {
+        Write-Output "Syncing $($user.username)"
+        Add-PirgUser -Pirg $PirgName -User $user.username
+    }
 }
 
 <#
