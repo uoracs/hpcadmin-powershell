@@ -125,13 +125,25 @@ function Get-PirgGidNumber {
  .Parameter Name
   The name of the PIRG to get details for.
 
+ .Parameter IncludeGroups
+  Use this to return all the PIRG subgroups as well.
+
  .Example
    # Get the hpcrcf PIRG AD group details.
    Get-Pirg -Name hpcrcf
+
+ .Example
+   # Get all hpcrcf PIRG and PirgGroup AD group details.
+   Get-Pirg -Name hpcrcf -IncludeGroups
+
+ .Example
+   # Get all PIRG AD groups.
+   Get-Pirg
 #>
 function Get-Pirg {
     param(
-        $Name = "",
+        [string] $Name = "",
+        [switch] $IncludeGroups = $false,
 
         [System.Management.Automation.Credential()]
         [System.Management.Automation.PSCredential]
@@ -141,16 +153,35 @@ function Get-Pirg {
     $params = @{}
     if ($Credential) { $params['Credential'] = $Credential }
 
+    # if name is passed, limit to just that pirg
     if ($Name.length -gt 0) {
         $PirgName = Get-CleansedPirgName $Name
         $PirgFullName = "is.racs.pirg.$PirgName"
-        Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params
-    } else {
-        $Filter = "^is\.racs\.pirg\.[a-zA-Z0-9_]+$"
-        Get-ADGroup -Properties "*" -Filter "name -like 'is.racs.pirg.*'" -SearchBase $PIRGSOU @params | Where-Object { $_.Name -match $Filter }
+        # just return the primary pirg group
+        if (!($IncludeGroups)) {
+            $regex = "^is\.racs\.pirg\.[a-zA-Z0-9_]+$"
+            Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params | Where-Object { $_.Name -match $regex }
+            return
+        # return all sub groups as well
+        } else {
+            $regex = "^is\.racs\.pirg\.[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)?$"
+            Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params | Where-Object { $_.Name -match $regex }
+            return
+        }
     }
 
-
+    # Otherwise get all pirgs
+    $PirgFullName = "is.racs.pirg.*"
+    if (!($IncludeGroups)) {
+        $regex = "^is\.racs\.pirg\.[a-zA-Z0-9_]+$"
+        Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params | Where-Object { $_.Name -match $regex }
+        return
+    # return all sub groups as well
+    } else {
+        $regex = "^is\.racs\.pirg\.[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)?$"
+        Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params | Where-Object { $_.Name -match $regex }
+        return
+    }
 }
 
 <#
