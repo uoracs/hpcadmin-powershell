@@ -131,21 +131,26 @@ function Get-PirgGidNumber {
 #>
 function Get-Pirg {
     param(
-        [Parameter(Mandatory = $true)]
-        $Name,
+        $Name = "",
 
         [System.Management.Automation.Credential()]
         [System.Management.Automation.PSCredential]
         [PSCredential] $Credential
     )
 
-    $PirgName = Get-CleansedPirgName $Name
-    $PirgFullName = "is.racs.pirg.$PirgName"
-
     $params = @{}
     if ($Credential) { $params['Credential'] = $Credential }
 
-    Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params
+    if ($Name.length -gt 0) {
+        $PirgName = Get-CleansedPirgName $Name
+        $PirgFullName = "is.racs.pirg.$PirgName"
+        Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params
+    } else {
+        $Filter = "^is\.racs\.pirg\.[a-zA-Z0-9_]+$"
+        Get-ADGroup -Properties "*" -Filter "name -like 'is.racs.pirg.*'" -SearchBase $PIRGSOU @params | Where-Object { $_.Name -match $Filter }
+    }
+
+
 }
 
 <#
