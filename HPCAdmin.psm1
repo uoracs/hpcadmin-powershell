@@ -155,31 +155,17 @@ function Get-Pirg {
 
     # if name is passed, limit to just that pirg
     if ($Name.length -gt 0) {
-        $PirgName = Get-CleansedPirgName $Name
-        $PirgFullName = "is.racs.pirg.$PirgName"
-        # just return the primary pirg group
-        if (!($IncludeGroups)) {
-            $regex = "^is\.racs\.pirg\.[a-zA-Z0-9_]+$"
-            Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params | Where-Object { $_.Name -match $regex }
-            return
-        # return all sub groups as well
-        } else {
-            $regex = "^is\.racs\.pirg\.[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)?$"
-            Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params | Where-Object { $_.Name -match $regex }
-            return
-        }
-    }
-
-    # Otherwise get all pirgs
-    $PirgFullName = "is.racs.pirg.*"
-    if (!($IncludeGroups)) {
-        $regex = "^is\.racs\.pirg\.[a-zA-Z0-9_]+$"
-        Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params | Where-Object { $_.Name -match $regex }
-        return
-    # return all sub groups as well
+        $PirgNameRegex = Get-CleansedPirgName $Name
     } else {
-        $regex = "^is\.racs\.pirg\.[a-zA-Z0-9_]+(\.[a-zA-Z0-9_]+)?$"
-        Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params | Where-Object { $_.Name -match $regex }
+        $PirgNameRegex = "[a-zA-Z0-9_]+"
+    }
+    # just the pirg group
+    if (!($IncludeGroups)) {
+        Get-ADGroup -Properties "*" -Filter "*" -SearchBase $PIRGSOU @params | Where-Object { $_.Name -match "^is\.racs\.pirg\.$PirgNameRegex$"}
+        return
+    # return everything
+    } else {
+        Get-ADGroup -Properties "*" -Filter "*" -SearchBase $PIRGSOU @params | Where-Object { $_.Name -match "^is\.racs\.pirg\.$PirgNameRegex(\.[a-zA-Z0-9_]+)?$"}
         return
     }
 }
