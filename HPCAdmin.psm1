@@ -18,7 +18,7 @@ function Get-NextPirgGid {
 
 <#
  .Synopsis
-  Get the next OU path for the Pirg.
+  Get the OU path for the Pirg.
 
  .Description
   Returns the full path to the Pirg's OU
@@ -32,6 +32,24 @@ function Get-PirgPath {
         [String] $Name
     )
     return "ou=" + $Name + "," + $PIRGSOU
+}
+
+<#
+ .Synopsis
+  Get the OU path for the Pirg Groups.
+
+ .Description
+  Returns the full path to the Pirg's Groups OU
+  
+ .Parameter Name
+  The name of the PIRG to get OU path for.
+#>
+function Get-PirgGroupPath {
+    param(
+        [Parameter(Mandatory = $true)]
+        [String] $Pirg
+    )
+    return "ou=Groups,ou=${Pirg},${PIRGSOU}"
 }
 
 
@@ -538,8 +556,6 @@ function Add-PirgUser {
    Remove-PirgUser -Pirg hpcrcf -User marka
 #>
 function Remove-PirgUser {
-    # TODO(lcrown): ensure user exists in pirg group first
-    # TODO(lcrown): remove from admin group
     param(
         [Parameter(Mandatory = $true)]
         $Pirg,
@@ -573,8 +589,7 @@ function Remove-PirgUser {
     $params = @{}
     if ($Credential) { $params['Credential'] = $Credential }
 
-    # TODO(lcrown): check admins group and remove user from that group too
-
+    Remove-PirgAdmin -Pirg $PirgName -User $UserName
     Remove-ADGroupMember -Identity $GroupObject -Members $UserObject @params -Confirm:$false
 }
 
@@ -634,7 +649,6 @@ function Sync-PirgMembers {
    Set-PirgPI -Pirg racs -User marka
 #>
 function Set-PirgPI {
-    # TODO(lcrown): ensure user exists in pirg group first
     param(
         [Parameter(Mandatory = $true)]
         $Pirg,
@@ -665,12 +679,19 @@ function Set-PirgPI {
         return
     }
 
+    $PirgObject = Get-Pirg -Pirg $PirgName @params
+
     $params = @{}
     if ($Credential) { $params['Credential'] = $Credential }
 
+    # remove all the members of the PI group
     Get-ADGroupMember -Identity $GroupObject | ForEach-Object { Remove-ADGroupMember -Identity $GroupObject $_ @params -Confirm:$false }
+    # add this user as the only user to that group
     Add-ADGroupMember -Identity $GroupObject -Members $UserObject @params
-    Add-PirgAdmin $UserObject
+    # the PI should also be an admin
+    Add-PirgAdmin -Pirg $PirgObject -User $UserObject @params
+    # and a user
+    Add-PirgUser -Pirg $PirgObject -User $UserObject @params
 }
 
 <#
@@ -691,7 +712,6 @@ function Set-PirgPI {
    Add-PirgAdmin -Pirg hpcrcf -User marka
 #>
 function Add-PirgAdmin {
-    # TODO(lcrown): ensure user exists in pirg group first
     param(
         [Parameter(Mandatory = $true)]
         $Pirg,
@@ -781,6 +801,7 @@ function Remove-PirgAdmin {
     $params = @{}
     if ($Credential) { $params['Credential'] = $Credential }
 
+    # This is safe if the user isn't a member of the group
     Remove-ADGroupMember -Identity $GroupObject -Members $UserObject @params -Confirm:$false
 }
 
@@ -821,14 +842,14 @@ function Get-PirgGroup {
 
     $PirgName = Get-CleansedPirgName $Pirg
     $PirgGroupName = $Group.ToLower()
-    $PirgPath = Get-PirgPath -Name $PirgName
+    $PirgGroupPath = Get-PirgGroupPath -Pirg $PirgName
 
     $PirgGroupFullName = "is.racs.pirg.$PirgName.$PirgGroupName"
 
     $params = @{}
     if ($Credential) { $params['Credential'] = $Credential }
 
-    Get-ADGroup -Properties * -Filter "name -like '$PirgGroupFullName'" -SearchBase $PirgPath @params
+    Get-ADGroup -Properties * -Filter "name -like '$PirgGroupFullName'" -SearchBase $PirgGroupPath @params
 }
 
 <#
@@ -856,15 +877,14 @@ function Get-PirgGroups {
     )
 
     $PirgName = Get-CleansedPirgName $Pirg
-    $PirgPath = Get-PirgPath -Name $PirgName
+    $PirgGroupPath = Get-PirgGroupPath -Name $PirgName
 
     $PirgFullName = "is.racs.pirg.$PirgName"
-    $ExcludeGroups = ($PirgFullName, "$PirgFullname.admins", "$PirgFullname.pi")
 
     $params = @{}
     if ($Credential) { $params['Credential'] = $Credential }
 
-    Get-ADGroup -Properties * -Filter * -SearchBase $PirgPath @params | Where-Object { $_.Name -notin $ExcludeGroups }
+    Get-ADGroup -Properties * -Filter * -SearchBase $PirgGroupPath @params 
 }
 
 <#
@@ -904,7 +924,7 @@ function New-PirgGroup {
 
     $PirgName = Get-CleansedPirgName $Pirg
     $PirgGroupName = $Group.ToLower()
-    $PirgPath = Get-PirgPath -Name $PirgName
+    $PirgGroupPath = Get-PirgGroupPath -Name $PirgName
 
     $ExistingGroup = Get-PirgGroup -Pirg $PirgName -Group $PirgGroupName
     if ($ExistingGroup) {
@@ -921,8 +941,13 @@ function New-PirgGroup {
     $params = @{}
     if ($Credential) { $params['Credential'] = $Credential }
 
-    # TODO(lcrown): create a "Groups" OU inside the pirg OU if groups are used. keeps it clean and away from the primary 3 groups.
-    New-ADGroup -Name "is.racs.pirg.$PirgName.$PirgGroupName" -Path $PirgPath -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid) } -GroupCategory Security -GroupScope Universal
+    # create the Groups OU if it doesn't exist
+    $maybe_ou = Get-ADOrganizationalUnit -Identity $PirgGroupPath @params
+    if (!($maybe_ou)) {
+        New-ADOrganizationalUnit -Name "Groups" -Path $PirgGroupPath @params
+    }
+
+    New-ADGroup -Name "is.racs.pirg.$PirgName.$PirgGroupName" -Path $PirgGroupPath -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid) } -GroupCategory Security -GroupScope Universal
 }
 
 
