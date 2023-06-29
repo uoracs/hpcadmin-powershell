@@ -921,6 +921,7 @@ function New-PirgGroup {
     $params = @{}
     if ($Credential) { $params['Credential'] = $Credential }
 
+    # TODO(lcrown): create a "Groups" OU inside the pirg OU if groups are used. keeps it clean and away from the primary 3 groups.
     New-ADGroup -Name "is.racs.pirg.$PirgName.$PirgGroupName" -Path $PirgPath -OtherAttributes @{"gidNumber" = $(Get-NextPirgGid) } -GroupCategory Security -GroupScope Universal
 }
 
