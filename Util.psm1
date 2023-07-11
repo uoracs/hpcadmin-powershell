@@ -1,4 +1,4 @@
-New-Variable -Name PIRGSOU -Value "ou=PIRGS,ou=RACS,ou=Groups,ou=IS,ou=units,dc=ad,dc=uoregon,dc=edu" -Scope Script -Force
+New-Variable -Name PIRGSOU -Value "ou=PIRGS,ou=RACS,ou=Groups,ou=IS,ou=units,dc=ad,dc=uoregon,dc=edu" -Scope Global -Force
 
 <#
  .Synopsis
@@ -22,7 +22,7 @@ function Get-NextPirgGid {
 
  .Description
   Returns the full path to the Pirg's OU
-  
+
  .Parameter Name
   The name of the PIRG to get OU path for.
 #>
@@ -40,7 +40,7 @@ function Get-PirgPath {
 
  .Description
   Returns the full path to the Pirg's Groups OU
-  
+
  .Parameter Name
   The name of the PIRG to get OU path for.
 #>
@@ -59,7 +59,7 @@ function Get-PirgGroupPath {
 
  .Description
   Returns short name of pirg no matter the type of input object
-  
+
  .Parameter Pirg
   Pirg to get name for. Can be string or ADGroup object
 #>
@@ -89,7 +89,7 @@ function Get-CleansedPirgName {
 
  .Description
   Returns username of user no matter the type of input object
-  
+
  .Parameter User
   User to get username for. Can be string or ADUser object
 #>
@@ -116,7 +116,7 @@ function Get-CleansedUserName {
 
  .Description
   Returns the gidNumber of the Pirg AD group
-  
+
  .Parameter Name
   The name of the PIRG to get OU path for.
 #>
@@ -129,6 +129,23 @@ function Get-PirgGidNumber {
     Get-Pirg -Name $PirgName | Select-Object gidNumber
 }
 
+<#
+ .Synopsis
+  Get the short name for a given Pirg Group.
+
+ .Description
+  Returns the last element of the Pirg Group's name separated by periods.
+
+ .Parameter Group
+  The PIRG Group object.
+#>
+function Get-PirgGroupShortName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject] $Group
+    )
+    return $Group.Name.split(".")[-1]
+}
 
 
 
@@ -197,3 +214,5 @@ function Get-TalapasAdminEmailList {
     $emailString = $emailList -join ";"
     Write-Output $emailString
 }
+
+Export-ModuleMember -Variable PIRGSOU -Function *

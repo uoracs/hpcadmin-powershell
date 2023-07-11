@@ -121,6 +121,40 @@ function Get-PirgPIGroup {
 
 <#
  .Synopsis
+  Get the PI user of a PIRG.
+
+ .Description
+  Returns the user object of the PI of the PIRG.
+
+ .Parameter Pirg
+  The name of the PIRG to get PI user for.
+
+ .Example
+   # Get the bgmp PI user.
+   Get-PirgPIUser -Pirg bgmp
+#>
+function Get-PirgPIUser {
+    param(
+        [Parameter(Mandatory = $true)]
+        $Pirg,
+
+        [System.Management.Automation.Credential()]
+        [System.Management.Automation.PSCredential]
+        [PSCredential] $Credential
+    )
+
+    $PirgName = Get-CleansedPirgName $Pirg
+    $PirgFullName = "is.racs.pirg.$PirgName.pi"
+
+    $params = @{}
+    if ($Credential) { $params['Credential'] = $Credential }
+
+    $PIGroup = Get-ADGroup -Properties "*" -Filter "name -like '$PirgFullName'" -SearchBase $PIRGSOU @params
+    Get-ADGroupMember -Identity $PIGroup @params
+}
+
+<#
+ .Synopsis
   Get list of PIRG user groups.
 
  .Description
@@ -252,7 +286,7 @@ function Remove-Pirg {
 
  .Example
    # Get all users in the "hpcrcf" PIRG
-   Get-PirgUsers -Pirg hpcrcf 
+   Get-PirgUsers -Pirg hpcrcf
 #>
 function Get-PirgUsers {
     param(
@@ -290,7 +324,7 @@ function Get-PirgUsers {
 
  .Example
    # Get all admins in the "hpcrcf" PIRG
-   Get-PirgAdmins -Pirg hpcrcf 
+   Get-PirgAdmins -Pirg hpcrcf
 #>
 function Get-PirgAdmins {
     param(
@@ -327,8 +361,8 @@ function Get-PirgAdmins {
   The name of the PIRG.
 
  .Example
-   # Get a list of username strings in the "racs" PIRG 
-   Get-PirgUsernames -Pirg racs 
+   # Get a list of username strings in the "racs" PIRG
+   Get-PirgUsernames -Pirg racs
 #>
 function Get-PirgUsernames {
     param(
@@ -372,7 +406,7 @@ function Add-PirgUser {
 
         [Parameter(Mandatory = $true)]
         $User,
-        
+
         [System.Management.Automation.Credential()]
         [System.Management.Automation.PSCredential]
         [PSCredential] $Credential
@@ -427,7 +461,7 @@ function Remove-PirgUser {
 
         [Parameter(Mandatory = $true)]
         $User,
-        
+
         [System.Management.Automation.Credential()]
         [System.Management.Automation.PSCredential]
         [PSCredential] $Credential
@@ -435,6 +469,8 @@ function Remove-PirgUser {
 
     $params = @{}
     if ($Credential) { $params['Credential'] = $Credential }
+
+    # TODO(lcrown): check if they're the PI, and warn/exit if so
 
     $PirgName = Get-CleansedPirgName $Pirg
     $UserName = Get-CleansedUserName $User
@@ -470,7 +506,7 @@ function Remove-PirgUser {
 
  .Example
    # Sync members for racs
-   Sync-PirgMembers -Pirg racs 
+   Sync-PirgMembers -Pirg racs
 #>
 function Sync-PirgMembers {
     param(
@@ -520,7 +556,7 @@ function Set-PirgPI {
 
         [Parameter(Mandatory = $true)]
         $User,
-        
+
         [System.Management.Automation.Credential()]
         [System.Management.Automation.PSCredential]
         [PSCredential] $Credential
@@ -583,7 +619,7 @@ function Add-PirgAdmin {
 
         [Parameter(Mandatory = $true)]
         $User,
-        
+
         [System.Management.Automation.Credential()]
         [System.Management.Automation.PSCredential]
         [PSCredential] $Credential
@@ -611,7 +647,10 @@ function Add-PirgAdmin {
     $params = @{}
     if ($Credential) { $params['Credential'] = $Credential }
 
+    # add user to admin group
     Add-ADGroupMember -Identity $GroupObject -Members $UserObject @params
+    # and add them to the pirg users
+    Add-PirgUser -Pirg $PirgName -User $UserName @params
 }
 
 <#
@@ -638,7 +677,7 @@ function Remove-PirgAdmin {
 
         [Parameter(Mandatory = $true)]
         $User,
-        
+
         [System.Management.Automation.Credential()]
         [System.Management.Automation.PSCredential]
         [PSCredential] $Credential

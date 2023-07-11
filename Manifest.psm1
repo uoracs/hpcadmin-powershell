@@ -46,16 +46,16 @@ function Get-HPCAdminManifest {
  .Description
   Returns the current manifest data hash from disk.
   Manifest data contains a hash that serves as a version number.
-  If our saved hash doesn't match the server hash, we know to import the manifest data. 
+  If our saved hash doesn't match the server hash, we know to import the manifest data.
   If they match, we can exit without doing any work.
 
  .Parameter Location
-  The filesystem location to the hash file. 
+  The filesystem location to the hash file.
   By default, it's %appdata%/HPCAdmin/manifest-hash
 
  .Example
    # Get the current manifest hash
-   Get-HPCAdminManifestHash 
+   Get-HPCAdminManifestHash
 #>
 function Get-HPCAdminManifestHash {
     param(
@@ -88,7 +88,7 @@ function Get-HPCAdminManifestHash {
   The hash as a string.
 
  .Parameter Location
-  The filesystem location to the hash file. 
+  The filesystem location to the hash file.
   By default, it's %appdata%/HPCAdmin/manifest-hash
 
  .Example
@@ -133,7 +133,7 @@ function Save-HPCAdminManifestHash {
  .Example
    # Synchronize with AD
    Import-HPCAdminManifest -URL "https://hpcadmin.example.org/export/memberships"
-   
+
  .Example
    # Synchronize with AD, custom local hash location
    Import-HPCAdminManifest -URL "https://hpcadmin.example.org/export/memberships" -Location "C:\Users\foo\hash"
@@ -188,6 +188,107 @@ function Import-HPCAdminManifest {
     #   }
     # }
     foreach ($pirg in $manifest_data.data.pirgs) {
+        # create the pirg if it doesn't exist
+        try {
+            $pirg_obj = Get-Pirg -Name $pirg.name
+        }
+        catch {
+            $pirg_obj = New-Pirg -Name $pirg.name -Owner $pirg.owner
+        }
+        # set the owner if it doesn't match
+        $owner = Get-PirgPIUser -Pirg $pirg_obj
+        try {
+            $new_owner = Get-ADUser -Identity $pirg.owner
+        }
+        catch {
+            Write-Error "Failed to find user ${pirg.owner}"
+            Write-Error $_
+            continue
+        }
+        if ($owner.DistinguishedName -ne $new_owner.DistinguishedName) {
+            Set-PirgPI -Pirg $pirg_obj -User $new_owner
+        }
+        # get the list of existing admins
+        $admins = Get-PirgAdmins -Pirg $pirg_obj
+        # compare to the list of admins in the payload
+        $new_admins = @()
+        foreach ($admin in $pirg.admins) {
+            try {
+                $new_admin = Get-ADUser -Identity $admin
+            }
+            catch {
+                Write-Error "Failed to find user ${admin}"
+                Write-Error $_
+                continue
+            }
+            $new_admins += $new_admin
+        }
+        # go through new admins and add them if they don't exist in ad
+        foreach ($new_admin in $new_admins) {
+            if ($admins -notcontains $new_admin) {
+                Add-PirgAdmin -Pirg $pirg_obj -User $new_admin
+            }
+        }
+        # go through old admins and remove them if they don't exist in the manifest
+        foreach ($admin in $admins) {
+            if ($new_admins -notcontains $admin) {
+                Remove-PirgAdmin -Pirg $pirg_obj -User $admin
+            }
+        }
+
+        # get the list of existing users
+        $users = Get-PirgUsers -Pirg $pirg_obj
+        # compare to the list of users in the payload
+        $new_users = @()
+        foreach ($user in $pirg.users) {
+            try {
+                $new_user = Get-ADUser -Identity $user
+            }
+            catch {
+                Write-Error "Failed to find user ${user}"
+                Write-Error $_
+                continue
+            }
+            $new_users += $new_user
+        }
+        # go through new users and add them if they don't exist in ad
+        foreach ($new_user in $new_users) {
+            if ($users -notcontains $new_user) {
+                Add-PirgUser -Pirg $pirg_obj -User $new_user
+            }
+        }
+        # go through old users and remove them if they don't exist in the manifest
+        foreach ($user in $users) {
+            if ($new_users -notcontains $user) {
+                Remove-PirgUser -Pirg $pirg_obj -User $user
+            }
+        }
+
+        # create the pirg groups if they don't exist
+        $pirg_groups = Get-PirgGroups -Pirg $pirg_obj
+        foreach ($new_pg in $pirg.groups) {
+            foreach ($pg in $pirg_groups) {
+                $short_name = Get-PirgGroupShortName -Group $pg
+                if ($short_name -eq $new_pg.name) {
+                    continue 2
+                }
+            }
+            New-PirgGroup -Pirg $pirg_obj -Name $new_pg.name
+        }
+
+        # delete the pirg groups if they don't exist in the manifest
+        foreach ($pg in $pirg_groups) {
+            $short_name = Get-PirgGroupShortName -Group $pg
+            foreach ($new_pg in $pirg.groups) {
+                if ($short_name -eq $new_pg.name) {
+                    continue 2
+                }
+            }
+            Remove-PirgGroup -Pirg $pirg_obj -Group $pg
+        }
+
+        #TODO(lcrown): add/remove users from pirg groups
+
 
     }
 
